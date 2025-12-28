@@ -3,7 +3,7 @@
  * - POST /astro/compute  (Swiss Ephemeris compute + geocoding)
  * - GET  /health
  *
- * Uses Moshier ephemeris (SEFLG_MOSEPH) so no external ephemeris files are required.
+ * Uses Moshier ephemeris (SEFLG_MOSEPH)
  */
 const express = require("express");
 const cors = require("cors");
@@ -12,15 +12,28 @@ const { geocodePlace } = require("./astro/geocode");
 const { computeChart } = require("./astro/compute");
 
 const app = express();
-app.use(cors({ origin: "*", methods: ["GET","POST","OPTIONS"], allowedHeaders: ["Content-Type","Authorization"] }));
+
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
+
 app.use(express.json({ limit: "2mb" }));
 
-const PORT = process.env.PORT || 3000;
+// 🔑 Railway-safe PORT
+const PORT = process.env.PORT || 8080;
 
+// Health check
 app.get("/health", (req, res) => {
-  res.json({ ok: true, service: "sanctuary-astro-server", ts: new Date().toISOString() });
+  res.json({
+    ok: true,
+    service: "sanctuary-astro-server",
+    ts: new Date().toISOString()
+  });
 });
 
+// Astro compute
 app.post("/astro/compute", async (req, res) => {
   try {
     const body = req.body || {};
@@ -29,11 +42,19 @@ app.post("/astro/compute", async (req, res) => {
     const latRaw = body.lat;
     const lonRaw = body.lon;
 
-    if (!dt) return res.status(400).json({ ok:false, error:"Missing dt. Use ISO like 1965-11-07T10:00" });
+    if (!dt) {
+      return res.status(400).json({
+        ok: false,
+        error: "Missing dt. Use ISO like 1965-11-07T10:00"
+      });
+    }
 
     const parsed = new Date(dt);
     if (Number.isNaN(parsed.getTime())) {
-      return res.status(400).json({ ok:false, error:"Invalid dt. Use ISO YYYY-MM-DDTHH:mm" });
+      return res.status(400).json({
+        ok: false,
+        error: "Invalid dt. Use ISO YYYY-MM-DDTHH:mm"
+      });
     }
 
     let lat = (typeof latRaw === "number") ? latRaw : null;
@@ -41,20 +62,42 @@ app.post("/astro/compute", async (req, res) => {
     let resolvedPlace = place || "";
 
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-      if (!place) return res.status(400).json({ ok:false, error:"Missing location. Provide {lat, lon} or a place string." });
+      if (!place) {
+        return res.status(400).json({
+          ok: false,
+          error: "Missing location. Provide {lat, lon} or a place string."
+        });
+      }
       const geo = await geocodePlace(place);
-      lat = geo.lat; lon = geo.lon;
+      lat = geo.lat;
+      lon = geo.lon;
       resolvedPlace = geo.displayName || place;
     }
 
-    const chart = await computeChart({ date: parsed, lat, lon, place: resolvedPlace });
+    const chart = await computeChart({
+      date: parsed,
+      lat,
+      lon,
+      place: resolvedPlace
+    });
+
     return res.json({ ok: true, ...chart });
+
   } catch (err) {
     console.error("[/astro/compute] error:", err);
-    return res.status(500).json({ ok:false, error: String(err && err.message ? err.message : err) });
+    return res.status(500).json({
+      ok: false,
+      error: String(err && err.message ? err.message : err)
+    });
   }
 });
 
-app.use((req, res) => res.status(404).json({ ok:false, error:"Not found" }));
+// Fallback
+app.use((req, res) => {
+  res.status(404).json({ ok: false, error: "Not found" });
+});
 
-app.listen(PORT, () => console.log(`✅ sanctuary-astro-server listening on :${PORT}`));
+// 🚀 IMPORTANT: bind to 0.0.0.0
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 sanctuary-astro-server listening on ${PORT}`);
+});
